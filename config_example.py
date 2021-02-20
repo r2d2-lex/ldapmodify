@@ -1,0 +1,8 @@
+USERNAME = 'testuser@example.com'
+PASSWORD = 'testpass'
+HOSTNAME = '127.0.0.1'
+BASE_DN_GRP = 'CN=Users,DC=example,DC=com'
+BASE_DN_OU = 'OU={},DC=example,DC=com'
+GROUP_FILTER = '(objectCategory=group)'
+GROUP_MEMBERS_FILTER = '(&(objectCategory=group)(cn={}))'
+USER_FILTER_TEMPLATE = '(&(objectCategory=person)(!(UserAccountControl:1.2.840.113556.1.4.803:=2))(name={}))'
