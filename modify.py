@@ -1,5 +1,4 @@
 import ldap
-import ldap.modlist as modlist
 import config
 
 
@@ -24,31 +23,38 @@ class LdapModify:
         if results:
             department = self.check_department(results)
             if department:
-                print(department+'\r\n')
+                print(department)
 
-    def modify_department(self):
-        pass
+    def modify_department(self, dn, department_description):
+        if not dn or not department_description:
+            return False
 
-    def check_department(self, results):
+        mod_list = [
+            (ldap.MOD_REPLACE, self.department, department_description.encode('utf-8')),
+        ]
+        print('Modify dept to {}'.format(department_description))
+        self.ldap_connect.modify_s(dn, mod_list)
+
+    def check_department(self, results: list) -> str:
         try:
             department = results[0][1][self.department][0]
             department = department.decode("utf-8")
             return department
         except (IndexError, KeyError):
-            return
+            return ''
 
-    def get_group_members(self, group_ou):
+    def get_group_members(self, group_ou) -> list:
         filter_exp = config.GROUP_MEMBERS_FILTER.format(group_ou)
         base = config.BASE_DN_GRP
         attr_list = ['member']
-        members = ''
+        members = []
         results = self.ldap_connect.search_s(base, self.scope, filter_exp, attr_list)
         try:
             members = results[0][1][attr_list[0]]
-        except KeyError as err:
+        except (IndexError, KeyError) as err:
             print('Cant get member of group: {}'.format(err))
 
-        return [self.extract_user_name(member) for member in members]
+        return members
 
     @property
     def get_groups(self):
@@ -60,23 +66,22 @@ class LdapModify:
 
         results = self.ldap_connect.search_s(config.BASE_DN_GRP, self.scope, filter_exp, attr_list)
         for result in results:
-            group_ou = self.get_result_value(result, attr_list[ou_grp_index])
-            group_description = self.get_result_value(result, attr_list[descr_grp_index])
+            group_ou = self.groups_result_value(result, attr_list[ou_grp_index])
+            group_description = self.groups_result_value(result, attr_list[descr_grp_index])
             yield group_ou, group_description
 
     @staticmethod
-    def get_result_value(result, name):
+    def groups_result_value(result, name):
         try:
             value = result[1][name][0].decode("utf-8")
             return value
-        except KeyError as err:
+        except (IndexError, KeyError) as err:
             print('Key error {}'.format(err))
-            return None
+            return False
 
     @staticmethod
     def extract_user_name(name):
         try:
-            name = name.decode("utf-8")
             name = name.split(',')[0]
             name = name.split('=')[1]
         except IndexError as err:
@@ -87,12 +92,6 @@ class LdapModify:
     def __del__(self):
         self.ldap_connect.unbind_s()
 
-    def modify_dept(self, value):
-        old = {'department' : ['']}
-        new = {'department' : ['']}
-        ldif = modlist.modifyModlistmodlist.modifyModlist(old,new)
-        self.ldap_connect.modify_s(config.BASE_DN, ldif)
-
 
 def main():
     lc = LdapModify(config.HOSTNAME, config.USERNAME, config.PASSWORD)
@@ -101,8 +100,11 @@ def main():
         print('OU: {}, Description: {}'.format(group_ou, group_description))
         members = lc.get_group_members(group_ou)
         for member in members:
-            lc.get_member_dept(member, group_ou)
-            # input()
+            dn_user_name = member.decode("utf-8")
+            print(dn_user_name)
+            lc.get_member_dept(lc.extract_user_name(dn_user_name), group_ou)
+            lc.modify_department(dn_user_name, group_description)
+            input()
 
 
 if __name__ == '__main__':
