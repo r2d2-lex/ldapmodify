@@ -9,21 +9,22 @@ class LdapModify:
         self.scope = ldap.SCOPE_SUBTREE
         self.department = 'department'
 
-    def get_member_dept(self, name, ou):
+    def get_member_dept(self, name, ou) -> bool:
         filter_exp = config.USER_FILTER_TEMPLATE.format(name)
         base = config.BASE_DN_OU.format(ou)
         attr_list = [self.department]
 
-        print('Name: {}'.format(name))
         try:
             results = self.ldap_connect.search_s(base, self.scope, filter_exp, attr_list)
         except ldap.NO_SUCH_OBJECT as err:
-            # print('No results: {}'.format(err))
-            return
+            print('No results for Name:{} Reason: {}'.format(name, err))
+            return False
         if results:
+            print('Results')
             department = self.check_department(results)
             if department:
-                print(department)
+                print('Current value of {}: {}'.format(self.department, department))
+            return True
 
     def modify_department(self, dn, department_description):
         if not dn or not department_description:
@@ -53,21 +54,20 @@ class LdapModify:
             members = results[0][1][attr_list[0]]
         except (IndexError, KeyError) as err:
             print('Cant get member of group: {}'.format(err))
-
         return members
 
     @property
     def get_groups(self):
-        ou_grp_index = 0
-        descr_grp_index = 1
+        ou_group_index = 0
+        description_group_index = 1
 
         filter_exp = config.GROUP_FILTER
         attr_list = ['sAMAccountName', 'description']
 
         results = self.ldap_connect.search_s(config.BASE_DN_GRP, self.scope, filter_exp, attr_list)
         for result in results:
-            group_ou = self.groups_result_value(result, attr_list[ou_grp_index])
-            group_description = self.groups_result_value(result, attr_list[descr_grp_index])
+            group_ou = self.groups_result_value(result, attr_list[ou_group_index])
+            group_description = self.groups_result_value(result, attr_list[description_group_index])
             yield group_ou, group_description
 
     @staticmethod
@@ -102,8 +102,8 @@ def main():
         for member in members:
             dn_user_name = member.decode("utf-8")
             print(dn_user_name)
-            lc.get_member_dept(lc.extract_user_name(dn_user_name), group_ou)
-            lc.modify_department(dn_user_name, group_description)
+            if lc.get_member_dept(lc.extract_user_name(dn_user_name), group_ou):
+                lc.modify_department(dn_user_name, group_description)
             input()
 
 
