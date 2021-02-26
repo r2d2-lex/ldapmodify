@@ -36,6 +36,13 @@ class LdapModify:
         print('Modify dept to {}'.format(department_description))
         self.ldap_connect.modify_s(dn, mod_list)
 
+    def remove_value_of_parameters(self, dn, *parameters):
+        mod_list = [(ldap.MOD_DELETE, parm, None) for parm in parameters]
+        try:
+            self.ldap_connect.modify_s(dn, mod_list)
+        except ldap.NO_SUCH_ATTRIBUTE as err:
+            print('Error delete parameters {}: {}'.format(parameters, err))
+
     def check_department(self, results: list) -> str:
         try:
             department = results[0][1][self.department][0]
@@ -102,8 +109,9 @@ def main():
         for member in members:
             dn_user_name = member.decode("utf-8")
             print(dn_user_name)
-            if lc.get_member_dept(lc.extract_user_name(dn_user_name), group_ou):
-                lc.modify_department(dn_user_name, group_description)
+            # lc.remove_value(dn_user_name, lc.department)
+            lc.get_member_dept(lc.extract_user_name(dn_user_name), group_ou)
+            lc.modify_department(dn_user_name, group_description)
             input()
 
 
