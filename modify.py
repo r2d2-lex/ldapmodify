@@ -9,22 +9,32 @@ class LdapModify:
         self.scope = ldap.SCOPE_SUBTREE
         self.department = 'department'
 
-    def get_member_dept(self, name, ou) -> bool:
+    def get_member_attrs(self, name, ou, *attrs) -> dict:
         filter_exp = config.USER_FILTER_TEMPLATE.format(name)
         base = config.BASE_DN_OU.format(ou)
-        attr_list = [self.department]
-
+        attr_list = [attr for attr in attrs]
+        results_dict = {}
         try:
             results = self.ldap_connect.search_s(base, self.scope, filter_exp, attr_list)
         except ldap.NO_SUCH_OBJECT as err:
-            print('No results for Name:{} Reason: {}'.format(name, err))
-            return False
+            print('No results for Name: {} Reason: {}'.format(name, err))
+            return results_dict
+
         if results:
-            print('Results')
-            department = self.check_department(results)
-            if department:
-                print('Current value of {}: {}'.format(self.department, department))
-            return True
+            for attr in attr_list:
+                results_dict[attr] = self.check_attr(attr, results)
+        else:
+            print('No results for name: {}, ou {}'.format(name, ou))
+        return results_dict
+
+    @staticmethod
+    def check_attr(attr: str, results: list) -> str:
+        try:
+            result = results[0][1][attr][0]
+            result = result.decode("utf-8")
+            return result
+        except (IndexError, KeyError):
+            return ''
 
     def modify_department(self, dn, department_description):
         if not dn or not department_description:
@@ -42,14 +52,6 @@ class LdapModify:
             self.ldap_connect.modify_s(dn, mod_list)
         except ldap.NO_SUCH_ATTRIBUTE as err:
             print('Error delete parameters {}: {}'.format(parameters, err))
-
-    def check_department(self, results: list) -> str:
-        try:
-            department = results[0][1][self.department][0]
-            department = department.decode("utf-8")
-            return department
-        except (IndexError, KeyError):
-            return ''
 
     def get_group_members(self, group_ou) -> list:
         filter_exp = config.GROUP_MEMBERS_FILTER.format(group_ou)
@@ -109,10 +111,10 @@ def main():
         for member in members:
             dn_user_name = member.decode("utf-8")
             print(dn_user_name)
-            # lc.remove_value(dn_user_name, lc.department)
-            lc.get_member_dept(lc.extract_user_name(dn_user_name), group_ou)
-            lc.modify_department(dn_user_name, group_description)
-            input()
+            member_record = lc.get_member_attrs(lc.extract_user_name(dn_user_name), group_ou, 'sAMAccountName', 'mail', 'physicalDeliveryOfficeName')
+            for key in member_record:
+                print('{}: {}'.format(key, member_record[key]))
+            print('\r\n')
 
 
 if __name__ == '__main__':
