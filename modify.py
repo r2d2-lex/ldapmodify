@@ -1,5 +1,11 @@
 import ldap
 import config
+from datetime import datetime, timedelta
+
+
+def ldap2datetime(ts):
+    ts = int(ts)
+    return datetime(1601, 1, 1) + timedelta(seconds=ts/10000000)
 
 
 class LdapModify:
@@ -111,9 +117,11 @@ def main():
         for member in members:
             dn_user_name = member.decode("utf-8")
             print(dn_user_name)
-            member_record = lc.get_member_attrs(lc.extract_user_name(dn_user_name), group_ou, 'sAMAccountName', 'mail', 'physicalDeliveryOfficeName')
+            member_record = lc.get_member_attrs(lc.extract_user_name(dn_user_name), group_ou, 'sAMAccountName', 'lastLogonTimestamp')
             for key in member_record:
                 print('{}: {}'.format(key, member_record[key]))
+                if key == 'lastLogonTimestamp':
+                    print(ldap2datetime(member_record[key]).isoformat())
             print('\r\n')
 
 
