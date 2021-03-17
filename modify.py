@@ -22,15 +22,12 @@ class LdapModify:
         results_dict = {}
         try:
             results = self.ldap_connect.search_s(base, self.scope, filter_exp, attr_list)
-        except ldap.NO_SUCH_OBJECT as err:
-            print('No results for Name: {} Reason: {}'.format(name, err))
+        except ldap.NO_SUCH_OBJECT:
             return results_dict
 
         if results:
             for attr in attr_list:
                 results_dict[attr] = self.check_attr(attr, results)
-        else:
-            print('No results for name: {}, ou {}'.format(name, ou))
         return results_dict
 
     @staticmethod
@@ -60,6 +57,7 @@ class LdapModify:
             print('Error delete parameters {}: {}'.format(parameters, err))
 
     def get_group_members(self, group_ou) -> list:
+        # return format: CN=Name_of_user,OU=Users,OU=Dept,DC=domain,DC=com
         filter_exp = config.GROUP_MEMBERS_FILTER.format(group_ou)
         base = config.BASE_DN_GRP
         attr_list = ['member']
@@ -94,15 +92,23 @@ class LdapModify:
             print('Key error {}'.format(err))
             return False
 
+    def parse_dn(self, dn_user_name):
+        user_name_parm = 0
+        user_ou_parm = 2
+        dn_user_name = dn_user_name.decode("utf-8")
+        user_name = self.extract_parm(dn_user_name, user_name_parm)
+        user_ou = self.extract_parm(dn_user_name, user_ou_parm)
+        return user_name, user_ou
+
     @staticmethod
-    def extract_user_name(name):
+    def extract_parm(name, parm):
         try:
-            name = name.split(',')[0]
-            name = name.split('=')[1]
+            value = name.split(',')[parm]
+            value = value.split('=')[1]
         except IndexError as err:
-            print('Cannot extract name: {}'.format(err))
-            return False
-        return name
+            print('Cannot extract parm: {}'.format(err))
+            return ''
+        return value
 
     def __del__(self):
         self.ldap_connect.unbind_s()
@@ -115,14 +121,15 @@ def main():
         print('OU: {}, Description: {}'.format(group_ou, group_description))
         members = lc.get_group_members(group_ou)
         for member in members:
-            dn_user_name = member.decode("utf-8")
-            print(dn_user_name)
-            member_record = lc.get_member_attrs(lc.extract_user_name(dn_user_name), group_ou, 'sAMAccountName', 'lastLogonTimestamp')
-            for key in member_record:
-                print('{}: {}'.format(key, member_record[key]))
-                if key == 'lastLogonTimestamp':
-                    print(ldap2datetime(member_record[key]).isoformat())
-            print('\r\n')
+            user_name, user_ou = lc.parse_dn(member)
+            member_record = lc.get_member_attrs(user_name , user_ou, 'sAMAccountName', 'lastLogonTimestamp')
+            if member_record:
+                print('{}, ou: {}'.format(user_name, user_ou))
+                for key in member_record:
+                    print('{}: {}'.format(key, member_record[key]))
+                    if key == 'lastLogonTimestamp':
+                        print(ldap2datetime(member_record[key]).isoformat())
+                print('\r\n')
 
 
 if __name__ == '__main__':
