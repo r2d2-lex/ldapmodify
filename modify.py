@@ -3,11 +3,6 @@ import config
 from datetime import datetime, timedelta
 
 
-def ldap2datetime(ts):
-    ts = int(ts)
-    return datetime(1601, 1, 1) + timedelta(seconds=ts/10000000)
-
-
 class LdapModify:
     def __init__(self, hostname, username, password, trace_lvl=0):
         self.ldap_connect = ldap.initialize('ldap://'+hostname+'/', trace_level=trace_lvl)
@@ -69,8 +64,8 @@ class LdapModify:
         results = self.ldap_connect.search_s(base, self.scope, filter_exp, attr_list)
         try:
             members = results[0][1][attr_list[0]]
-        except (IndexError, KeyError) as err:
-            print('Cant get member of group: {}'.format(err))
+        except (IndexError, KeyError):
+            print('Невозможно получить пользователей для OU: {}'.format(group_ou))
         return members
 
     @property
@@ -92,9 +87,8 @@ class LdapModify:
         try:
             value = result[1][name][0].decode("utf-8")
             return value
-        except (IndexError, KeyError) as err:
-            print('Key error for groups_result {}'.format(err))
-            return False
+        except (IndexError, KeyError):
+            return ''
 
     def parse_dn(self, dn_user_name):
         user_name_parm = 0
@@ -126,36 +120,49 @@ class LdapModify:
                     pass
         return users_dict
 
+    @staticmethod
+    def ldap2datetime(ts):
+        ts = int(ts)
+        return datetime(1601, 1, 1) + timedelta(seconds=ts / 10000000)
+
     def __del__(self):
         self.ldap_connect.unbind_s()
 
 
+def datetime_to_str(date_time):
+    dt = LdapModify.ldap2datetime(date_time)
+    return dt.strftime("%Y-%m-%d")
+
+
 def main():
     all_users_dict = {}
+    user_attrs = 'lastLogonTimestamp', 'mail'
+
     lc = LdapModify(config.HOSTNAME, config.USERNAME, config.PASSWORD)
     for group_ou, group_description in lc.get_groups:
-        print('_____________________' * 5)
         print('OU: {}, Description: {}'.format(group_ou, group_description))
         group_members = lc.get_group_members(group_ou)
-        users_dict = lc.make_members_dict(group_members, 'lastLogonTimestamp', 'mail')
+        users_dict = lc.make_members_dict(group_members, *user_attrs)
         all_users_dict = {**all_users_dict, **users_dict}
 
-    for key, value in all_users_dict.items():
-        ts = ldap2datetime(value['lastLogonTimestamp'])
-        ts = ts.isoformat()
-        print('{} : {} {} {}'.format(key, value[lc.ldap_search_attr], value['mail'], ts))
-    print('Total {} users'.format(len(all_users_dict)))
+    print('Всего {} пользователей\r\n'.format(len(all_users_dict)))
+    get_users_info('results.txt', all_users_dict)
 
-    with open('results.txt') as fh:
-        rows = fh.read().splitlines()
 
-    print('******' * 10)
-    for row in rows:
-        try:
-            name = all_users_dict[row]
-            print('Row: {} Name {}'.format(row, name))
-        except KeyError:
-            print('No key for {}'.format(row))
+def get_users_info(filename, users_dict):
+    with open(filename) as fh:
+        login_names = fh.read().splitlines()
+    for login in login_names:
+        if login in users_dict:
+            user_record = users_dict[login]
+            result_string = ''
+            for key, value in user_record.items():
+                if key == 'lastLogonTimestamp':
+                    value = datetime_to_str(value)
+                result_string += '{} '.format(value)
+            print(result_string)
+        else:
+            print('*** Нет записи для логина: "{}" в словаре!'.format(login))
 
 
 if __name__ == '__main__':
