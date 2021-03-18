@@ -14,12 +14,16 @@ class LdapModify:
         self.ldap_connect.simple_bind_s(username, password)
         self.scope = ldap.SCOPE_SUBTREE
         self.department = 'department'
+        self.ldap_member_attr = 'sAMAccountName'
+        self.ldap_search_attr = 'displayName'
 
     def get_member_attrs(self, name, ou, *attrs) -> dict:
+        # Возвращает словарь с ключами: self.ldap_member_attr, self.ldap_search_attr + attrs
         filter_exp = config.USER_FILTER_TEMPLATE.format(name)
         base = config.BASE_DN_OU.format(ou)
         attr_list = [attr for attr in attrs]
-        results_dict = {}
+        attr_list.append(self.ldap_member_attr)
+        results_dict = {self.ldap_search_attr: name}
         try:
             results = self.ldap_connect.search_s(base, self.scope, filter_exp, attr_list)
         except ldap.NO_SUCH_OBJECT:
@@ -89,7 +93,7 @@ class LdapModify:
             value = result[1][name][0].decode("utf-8")
             return value
         except (IndexError, KeyError) as err:
-            print('Key error {}'.format(err))
+            print('Key error for groups_result {}'.format(err))
             return False
 
     def parse_dn(self, dn_user_name):
@@ -110,26 +114,48 @@ class LdapModify:
             return ''
         return value
 
+    def make_members_dict(self, members, *attrs):
+        users_dict = {}
+        for member in members:
+            user_name, user_ou = self.parse_dn(member)
+            member_record = self.get_member_attrs(user_name, user_ou, *attrs)
+            if member_record:
+                try:
+                    users_dict[member_record[self.ldap_member_attr]] = member_record
+                except (KeyError, IndexError):
+                    pass
+        return users_dict
+
     def __del__(self):
         self.ldap_connect.unbind_s()
 
 
 def main():
+    all_users_dict = {}
     lc = LdapModify(config.HOSTNAME, config.USERNAME, config.PASSWORD)
     for group_ou, group_description in lc.get_groups:
         print('_____________________' * 5)
         print('OU: {}, Description: {}'.format(group_ou, group_description))
-        members = lc.get_group_members(group_ou)
-        for member in members:
-            user_name, user_ou = lc.parse_dn(member)
-            member_record = lc.get_member_attrs(user_name , user_ou, 'sAMAccountName', 'lastLogonTimestamp')
-            if member_record:
-                print('{}, ou: {}'.format(user_name, user_ou))
-                for key in member_record:
-                    print('{}: {}'.format(key, member_record[key]))
-                    if key == 'lastLogonTimestamp':
-                        print(ldap2datetime(member_record[key]).isoformat())
-                print('\r\n')
+        group_members = lc.get_group_members(group_ou)
+        users_dict = lc.make_members_dict(group_members, 'lastLogonTimestamp', 'mail')
+        all_users_dict = {**all_users_dict, **users_dict}
+
+    for key, value in all_users_dict.items():
+        ts = ldap2datetime(value['lastLogonTimestamp'])
+        ts = ts.isoformat()
+        print('{} : {} {} {}'.format(key, value[lc.ldap_search_attr], value['mail'], ts))
+    print('Total {} users'.format(len(all_users_dict)))
+
+    with open('results.txt') as fh:
+        rows = fh.read().splitlines()
+
+    print('******' * 10)
+    for row in rows:
+        try:
+            name = all_users_dict[row]
+            print('Row: {} Name {}'.format(row, name))
+        except KeyError:
+            print('No key for {}'.format(row))
 
 
 if __name__ == '__main__':
