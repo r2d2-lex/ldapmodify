@@ -69,7 +69,8 @@ class LdapModify:
         try:
             members = results[0][1][attr_list[0]]
         except (IndexError, KeyError):
-            print('Невозможно получить пользователей для OU: {}'.format(group_ou))
+            pass
+            # print('Невозможно получить пользователей для OU: {}'.format(group_ou))
         return members
 
     def get_groups(self, base, group_filter):
